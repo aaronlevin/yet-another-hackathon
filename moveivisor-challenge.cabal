@@ -1,0 +1,15 @@
+Name:                movievisor-challenge 
+Version:             0.0
+Description:         Netflix
+License:             GPL
+Author:              Aaron Levin
+Maintainer:          aaron@weirdcanada.com
+Build-Type:          Simple
+Cabal-Version:       >=1.2
+Executable recommendations 
+  Main-is:           src/main.hs
+  Build-Depends:     base >= 3 && < 5,
+                     hierarchical-clustering,
+                     split,
+                     containers,
+                     bytestring
