@@ -10,6 +10,12 @@ Executable recommendations
   Main-is:           src/main.hs
   Build-Depends:     base >= 3 && < 5,
                      hierarchical-clustering,
+                     hierarchical-clustering-diagrams,
                      split,
                      containers,
-                     bytestring
+                     bytestring,
+                     parallel
+  ghc-options:
+                     -O2
+                     -rtsopts
+                     ---threaded
