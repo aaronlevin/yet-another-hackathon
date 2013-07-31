@@ -2,7 +2,7 @@
 
 import Control.Parallel.Strategies
 import Control.Parallel
-import qualified  Data.ByteString.Lazy as B
+import qualified  Data.ByteString.Lazy as BSL
 import            Data.Clustering.Hierarchical
 import            Data.List (find, find, groupBy, sort)
 import            Data.List.Split
@@ -10,6 +10,8 @@ import            Data.Maybe (catMaybes)
 import qualified  Data.Map as Map
 import qualified  Data.Set as S
 import            Data.String
+import qualified  Data.Text.Lazy as BTL
+import qualified  Data.Text.Lazy.IO as BTLIO hiding (putStrLn)
 import            Debug.Trace
 import            GHC.Float
 import            System.Environment
@@ -18,18 +20,18 @@ import            System.IO
 
 data Movie = Movie { movieRating :: Int } deriving (Show)
 
-data Interest = Interest { interestIdentity :: String
-                          , name :: String
-                          , url :: String
-                          , category :: String
+data Interest = Interest { interestIdentity :: BTL.Text
+                          , name :: BTL.Text
+                          , url :: BTL.Text
+                          , category :: BTL.Text
                           , ratings :: [Rating]
                           } deriving (Eq, Show)
 
 instance Ord Interest where
   (Interest i _ _ _ _) `compare` (Interest j _ _ _ _) = i `compare` j
 
-data Rating = Rating { userId :: String
-                     , interestId :: String
+data Rating = Rating { userId :: BTL.Text
+                     , interestId :: BTL.Text
                      , rating :: Int
                      , timestamp :: Int
                      } deriving (Eq, Show)
@@ -45,64 +47,57 @@ instance Ord RatedInterest where
   (RatedInterest s1 i1) `compare` (RatedInterest s2 i2) = s1 `compare` s2
 
 data Config = Config { maxDistance :: Int 
-                     , interestFilter :: S.Set String
+                     , interestFilter :: S.Set BTL.Text
                      } deriving (Show)
 
-data IMDB = IMDB { interestName :: String
-                 , tags :: S.Set String
-                 , userReviews :: [String]
-                 , keywords :: S.Set String
+data IMDB = IMDB { interestName :: BTL.Text
+                 , tags :: S.Set BTL.Text
+                 , userReviews :: [BTL.Text]
+                 , keywords :: S.Set BTL.Text
                  } deriving (Eq, Show)
 
 instance Ord IMDB where
   (IMDB interest _ _ _ ) `compare` (IMDB other _ _ _ ) = interest `compare` other
 
 -- Parse a line from the interests tsv
-parseInterestLine :: String -> Interest
-parseInterestLine line = case splitOn "\t" line of
+parseInterestLine :: BTL.Text -> Interest
+parseInterestLine line = case BTL.splitOn "\t" line of
   [a,b,c,d] -> Interest a b c d [] 
 
 -- Get interests from the file
 getInterests :: FilePath -> IO [Interest]
 getInterests file = do
-  content <- readFile file
-  return $ map parseInterestLine $ lines content 
+  content <- BTLIO.readFile file
+  return $ map parseInterestLine $ BTL.lines content 
 
 -- parse a line from the ratings file
-parseRatingsLine :: String -> Rating
-parseRatingsLine line = case splitOn "\t" line of
+parseRatingsLine :: BTL.Text -> Rating
+parseRatingsLine line = case BTL.splitOn "\t" line of
   [a, b, c, d] -> Rating a b (f c) (f d) 
   where
-    f :: String -> Int
-    f x = read x :: Int
+    f :: BTL.Text -> Int
+    f x = read (BTL.unpack x) :: Int
 
 -- Get Ratings from file
 getRatings :: FilePath -> IO [Rating]
 getRatings file = do
-  content <- readFile file
-  return $ map parseRatingsLine $ lines content
+  content <- BTLIO.readFile file
+  return $ map parseRatingsLine $ BTL.lines content
 
-parseImdbLine :: String -> (String, IMDB)
-parseImdbLine line = case splitOn "\t" line of
+parseImdbLine :: BTL.Text -> (BTL.Text, IMDB)
+parseImdbLine line = case BTL.splitOn "\t" line of
   [comboName,_,_,_,_,_,tags,_,_,_,userReviews,_,_,_,_,keywords,_,_,_] -> (comboName
-    , IMDB comboName (S.fromList $ splitOn "|" tags) (splitOn "|" userReviews) (S.fromList $ splitOn "|" keywords)
+    , IMDB comboName (S.fromList $ BTL.splitOn "|" tags) (BTL.splitOn "|" userReviews) (S.fromList $ BTL.splitOn "|" keywords)
     )
 
 -- get Imdb info from file
-getImdb :: FilePath -> IO (Map.Map String IMDB)
+getImdb :: FilePath -> IO (Map.Map BTL.Text IMDB)
 getImdb file = do
-  content <- readFile file
-  return $ Map.fromList $ map parseImdbLine $ lines content
-
--- Tag Frequency Analysis
---tagFrequencyMap :: FilePath -> IO (Map.Map String Int)
---tagFrequencyMap file = do
---  content <- readFile file
---  return $ lines content
-
+  content <- BTLIO.readFile file
+  return $ Map.fromList $ map parseImdbLine $ BTL.lines content
 
 -- Assume the list of ratings all have the same interestId
-createNewInterestFromRatings :: [Rating] -> Map.Map String Interest -> Maybe Interest
+createNewInterestFromRatings :: [Rating] -> Map.Map BTL.Text Interest -> Maybe Interest
 createNewInterestFromRatings ratings interestMap = fmap (interestCopy ratings) (Map.lookup (interestId $ head ratings) interestMap) 
   where
     interestCopy :: [Rating] -> Interest -> Interest
@@ -118,9 +113,9 @@ interestMatrix ratings interests = newInterests ratingGroups
   where
     ratingGroups :: [[Rating]]
     ratingGroups = groupBy ratingsWithSameInterest ratings
-    interestTuple :: Interest -> (String, Interest)
+    interestTuple :: Interest -> (BTL.Text, Interest)
     interestTuple interest = ( (interestIdentity interest), interest )
-    interestsMap :: Map.Map String Interest
+    interestsMap :: Map.Map BTL.Text Interest
     interestsMap = Map.fromList $ map interestTuple interests 
     newInterests :: [[Rating]] -> [Interest]
     newInterests rss = catMaybes $ map (\rs -> createNewInterestFromRatings rs interestsMap) rss
@@ -166,7 +161,7 @@ ratingsListDistance config rs1 rs2 = case dotProduct of
     rNorm2 = ratingNorm rs2
 
 -- IMDB Intersection
-imdbIntersection :: Map.Map String IMDB -> Interest -> Interest -> Int
+imdbIntersection :: Map.Map BTL.Text IMDB -> Interest -> Interest -> Int
 imdbIntersection imdbMap i1 i2 = case (Map.lookup (url i1) imdbMap, Map.lookup (url i2) imdbMap) of
   (Nothing, Nothing) ->  0
   (Nothing, Just imdb) ->  0
@@ -174,7 +169,7 @@ imdbIntersection imdbMap i1 i2 = case (Map.lookup (url i1) imdbMap, Map.lookup (
   (Just imdb1, Just imdb2) -> (S.size $ (tags imdb1) `S.intersection` (tags imdb2)) 
 
 -- Calculate distance between two interests
-interestDistance :: Config -> (Map.Map String IMDB) -> Interest -> Interest -> Distance
+interestDistance :: Config -> (Map.Map BTL.Text IMDB) -> Interest -> Interest -> Distance
 interestDistance config imdbMap i1 i2 = case (ratings i1, ratings i2) of
   ([],[]) -> fromIntegral (maxDistance config)
   (rs,[]) -> fromIntegral (maxDistance config)
@@ -188,24 +183,18 @@ interestDistance config imdbMap i1 i2 = case (ratings i1, ratings i2) of
 filterInterest :: Config -> Interest -> Bool
 filterInterest config interest = S.member (category interest) (interestFilter config)
 
-printInterestsToFile :: [Interest] -> IO ()
-printInterestsToFile interests = do
-  outputFile <- openFile "tmp-interests.txt" WriteMode
-  hPutStr outputFile $ show $ map (\x -> (interestIdentity x)) interests
-  hClose outputFile
-
 -- Find and interest by name
-findInterestByName :: String -> [Interest] -> Maybe Interest
+findInterestByName :: BTL.Text -> [Interest] -> Maybe Interest
 findInterestByName n is = find (\i -> (name i) == n) is
 
-findInterestByUrl :: String -> [Interest] -> Maybe Interest
+findInterestByUrl :: BTL.Text -> [Interest] -> Maybe Interest
 findInterestByUrl n is = find (\i -> (url i) == n) is
 
 findTopComparisons :: Int -> Interest -> (Interest -> Interest -> Double) -> [Interest] -> [RatedInterest]
 findTopComparisons limit interest scoreFunc interests = 
   take limit $ sort $ map (\x -> RatedInterest ((scoreFunc interest) x) x) interests
 
---filterComparisonByKeywords :: Map.Map String IMDB -> Interest -> Interest -> Bool
+--filterComparisonByKeywords :: Map.Map BTL.Text IMDB -> Interest -> Interest -> Bool
 --filterComparisonByKeywords imdbMap i1 i2 = 
 
 main :: IO ()
@@ -224,7 +213,7 @@ main = do
 
   let curriedDistance = interestDistance config imdb
 
-  let movieInterest = findInterestByUrl movieName interestsWithRatings
+  let movieInterest = findInterestByUrl (fromString movieName) interestsWithRatings
 
   --mapM_ putStrLn $ map (\x -> interestIdentity x) interestsWithRatings
   --mapM_ putStrLn $ map (\x -> show  x) $ Map.toList imdb

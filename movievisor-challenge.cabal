@@ -6,7 +6,7 @@ Author:              Aaron Levin
 Maintainer:          aaron@weirdcanada.com
 Build-Type:          Simple
 Cabal-Version:       >=1.2
-Executable recommendations 
+Executable recommendations-perf
   Main-is:           src/main.hs
   Build-Depends:     base >= 3 && < 5,
                      hierarchical-clustering,
@@ -14,8 +14,9 @@ Executable recommendations
                      split,
                      containers,
                      bytestring,
-                     parallel
+                     parallel,
+                     text
   ghc-options:
                      -O2
                      -rtsopts
-                     ---threaded
+--                     -threaded
