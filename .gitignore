@@ -1,4 +1,4 @@
 *.tsv
 *.csv
 tmp.txt
-dist/*
+dist/
