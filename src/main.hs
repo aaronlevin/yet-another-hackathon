@@ -164,8 +164,6 @@ ratingsListDistance config rs1 rs2 = case dotProduct of
   where
     dotProduct = ratingDotProduct rs1 rs2
     rNorm2 = ratingNorm rs2
-    --rNorm1 = ratingNorm rs1
-    -- add norm calc
 
 -- IMDB Intersection
 imdbIntersection :: Map.Map String IMDB -> Interest -> Interest -> Int
