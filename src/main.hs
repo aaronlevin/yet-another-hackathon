@@ -10,6 +10,7 @@ import            Data.Maybe (catMaybes)
 import qualified  Data.Map as Map
 import qualified  Data.Set as S
 import            Data.String
+import            Debug.Trace
 import            GHC.Float
 import            System.Environment
 import            System.IO
@@ -47,7 +48,7 @@ data Config = Config { maxDistance :: Int
                      , interestFilter :: S.Set String
                      } deriving (Show)
 
-data IMDB = IMDB { imdbInterestId :: String
+data IMDB = IMDB { interestName :: String
                  , tags :: S.Set String
                  , userReviews :: [String]
                  , keywords :: S.Set String
@@ -83,15 +84,22 @@ getRatings file = do
 
 parseImdbLine :: String -> (String, IMDB)
 parseImdbLine line = case splitOn "\t" line of
-  [comboId,_,_,_,_,_,tags,_,_,_,userReviews,_,_,_,_,keywords,_,_,_] -> (comboId
-    , IMDB comboId (S.fromList $ splitOn "|" tags) (splitOn "|" userReviews) (S.fromList $ splitOn "|" keywords)
+  [comboName,_,_,_,_,_,tags,_,_,_,userReviews,_,_,_,_,keywords,_,_,_] -> (comboName
+    , IMDB comboName (S.fromList $ splitOn "|" tags) (splitOn "|" userReviews) (S.fromList $ splitOn "|" keywords)
     )
 
 -- get Imdb info from file
 getImdb :: FilePath -> IO (Map.Map String IMDB)
 getImdb file = do
   content <- readFile file
-  return $ Map.fromDistinctAscList $ map parseImdbLine $ lines content
+  return $ Map.fromList $ map parseImdbLine $ lines content
+
+-- Tag Frequency Analysis
+--tagFrequencyMap :: FilePath -> IO (Map.Map String Int)
+--tagFrequencyMap file = do
+--  content <- readFile file
+--  return $ lines content
+
 
 -- Assume the list of ratings all have the same interestId
 createNewInterestFromRatings :: [Rating] -> Map.Map String Interest -> Maybe Interest
@@ -121,9 +129,9 @@ interestMatrix ratings interests = newInterests ratingGroups
 
 ratingMap :: Int -> Int
 ratingMap i = case i of
-  1 -> 10 -- one stars
-  2 -> 20 -- two stars
-  3 -> 30 -- four stars
+  1 -> 1 -- one stars
+  2 -> 2 -- two stars
+  3 -> 10 -- four stars
   4 -> 40 -- five stars
   5 -> 50 -- five stars
   10 -> 100 -- Favorited
@@ -152,17 +160,20 @@ ratingDotProduct rs1 rs2 = sum $ map dot $ filter sameUser [ (x,y) | x <- rs1, y
 ratingsListDistance :: Config -> [Rating] -> [Rating] -> Double
 ratingsListDistance config rs1 rs2 = case dotProduct of
   0 -> fromIntegral $ maxDistance config
-  d -> (  (ratingNorm rs1) * (ratingNorm rs2) ) / (fromIntegral  d)  
+  d -> ( rNorm2 ) / (fromIntegral  d)  
   where
     dotProduct = ratingDotProduct rs1 rs2
+    rNorm2 = ratingNorm rs2
+    --rNorm1 = ratingNorm rs1
+    -- add norm calc
 
 -- IMDB Intersection
 imdbIntersection :: Map.Map String IMDB -> Interest -> Interest -> Int
-imdbIntersection imdbMap i1 i2 = case (Map.lookup (interestIdentity i1) imdbMap, Map.lookup (interestIdentity i2) imdbMap) of
-  (Nothing, Nothing) -> 0
-  (Nothing, Just imdb) -> 0
-  (Just imdb, Nothing) -> 0
-  (Just imdb1, Just imdb2) -> (S.size $ (tags imdb1) `S.intersection` (tags imdb2)) + (S.size $ (keywords imdb1) `S.intersection` (keywords imdb2))
+imdbIntersection imdbMap i1 i2 = case (Map.lookup (url i1) imdbMap, Map.lookup (url i2) imdbMap) of
+  (Nothing, Nothing) ->  0
+  (Nothing, Just imdb) ->  0
+  (Just imdb, Nothing) ->  0
+  (Just imdb1, Just imdb2) -> (S.size $ (tags imdb1) `S.intersection` (tags imdb2)) 
 
 -- Calculate distance between two interests
 interestDistance :: Config -> (Map.Map String IMDB) -> Interest -> Interest -> Distance
@@ -170,7 +181,7 @@ interestDistance config imdbMap i1 i2 = case (ratings i1, ratings i2) of
   ([],[]) -> fromIntegral (maxDistance config)
   (rs,[]) -> fromIntegral (maxDistance config)
   ([],rs) -> fromIntegral (maxDistance config) 
-  (rs1, rs2) -> (ratingsListDistance config rs1 rs2) / imdbIntersect
+  (rs1, rs2) -> sqrt $ (ratingsListDistance config rs1 rs2) ^ 2  + (1 / imdbIntersect)^2
   where
     imdbIntersect = fromIntegral $ case (imdbIntersection imdbMap i1 i2) of
       0 -> 1
@@ -196,14 +207,14 @@ findTopComparisons :: Int -> Interest -> (Interest -> Interest -> Double) -> [In
 findTopComparisons limit interest scoreFunc interests = 
   take limit $ sort $ map (\x -> RatedInterest ((scoreFunc interest) x) x) interests
 
+--filterComparisonByKeywords :: Map.Map String IMDB -> Interest -> Interest -> Bool
+--filterComparisonByKeywords imdbMap i1 i2 = 
+
 main :: IO ()
 main = do
   args <- getArgs
   let movieName = args !! 0
   let topN = args !! 1
-  --let movieList = [ Movie 1, Movie 2, Movie 0, Movie 10, Movie 11 ]
-  --let dendo = dendrogram SingleLinkage movieList distance
-  --print $ show dendo
   let config = Config 200 $ S.fromList ["Movie", "Movie Actor", "Book", "Movie Series"]
 
   interests <- fmap sort $ getInterests "/home/aaron/dev/movievisor-challenge/dump_interests-no_header.tsv"
@@ -217,11 +228,13 @@ main = do
 
   let movieInterest = findInterestByUrl movieName interestsWithRatings
 
+  --mapM_ putStrLn $ map (\x -> interestIdentity x) interestsWithRatings
+  --mapM_ putStrLn $ map (\x -> show  x) $ Map.toList imdb
+
   case movieInterest of
     Nothing -> print $ "Could not find movie: " ++ movieName
     Just mi -> mapM_ putStrLn $ map (\x -> show $ (interestRating x , name $ interest x)) $ findTopComparisons (read topN :: Int) mi curriedDistance interestsWithRatings
 
-  --mapM_ putStrLn $ map (\x -> interestIdentity x) interestsWithRatings
 
   --let dendo = dendrogram CLINK (filter  (filterInterest config) interestsWithRatings) $ interestDistance config
   --print $ show dendo
